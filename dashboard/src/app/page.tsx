@@ -2,14 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toBlob } from "html-to-image";
-import {
-  type Candle,
-  type SignalSettings,
-  type TradingSignal,
-} from "@/components/TradingChart";
+import { type Candle } from "@/components/TradingChart";
 import PerformanceAnalytics from "@/components/PerformanceAnalytics";
 import DisagreementExplorer from "@/components/DisagreementExplorer";
-import { API } from "@/components/dashboard/constants";
 import { DatasetToolbar } from "@/components/dashboard/dataset-toolbar";
 import { DashboardHeader } from "@/components/dashboard/header";
 import {
@@ -17,204 +12,90 @@ import {
   CandleInspector,
 } from "@/components/dashboard/inspectors";
 import { MarketExplorer } from "@/components/dashboard/market-explorer";
-import type {
-  CandleDetail,
-  Dataset,
-  DatasetInfo,
-  PredictionDetail,
-} from "@/components/dashboard/types";
+import type { Dataset } from "@/components/dashboard/types";
+import {
+  useCandleDetailQuery,
+  useCandlesQuery,
+  useDatasetsQuery,
+  usePredictionQuery,
+  useSignalsQuery,
+} from "@/queries/dashboard-queries";
+import { useDashboardStore } from "@/stores/dashboard-store";
+
+const EMPTY_CANDLES: Candle[] = [];
+
+function errorMessage(error: unknown): string | null {
+  return error instanceof Error ? error.message : error ? String(error) : null;
+}
 
 export default function Home() {
   const dashboardRef = useRef<HTMLElement>(null);
-  const [dataset, setDataset] = useState<Dataset>("test");
-  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [signals, setSignals] = useState<TradingSignal[]>([]);
-  const [signalSettings, setSignalSettings] = useState<SignalSettings>({
-    qwen: true,
-    heuristic: false,
-    target: false,
-    filter: "all",
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [signalError, setSignalError] = useState<string | null>(null);
-  const [selectedTime, setSelectedTime] = useState<number | null>(null);
-  const [showInspectors, setShowInspectors] = useState(true);
-  const [focusedTime, setFocusedTime] = useState<number | null>(null);
-  const [detail, setDetail] = useState<CandleDetail | null>(null);
-  const [prediction, setPrediction] = useState<PredictionDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [predictionLoading, setPredictionLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [predictionError, setPredictionError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [captureStatus, setCaptureStatus] = useState("");
-  const activeDataset = datasets.find((item) => item.name === dataset);
+  const dataset = useDashboardStore((state) => state.dataset);
+  const selectedTime = useDashboardStore((state) => state.selectedTime);
+  const focusedTime = useDashboardStore((state) => state.focusedTime);
+  const showInspectors = useDashboardStore((state) => state.showInspectors);
+  const signalSettings = useDashboardStore((state) => state.signalSettings);
+  const setDataset = useDashboardStore((state) => state.setDataset);
+  const setSelectedTime = useDashboardStore((state) => state.setSelectedTime);
+  const setFocusedTime = useDashboardStore((state) => state.setFocusedTime);
+  const setShowInspectors = useDashboardStore(
+    (state) => state.setShowInspectors,
+  );
+  const setSignalSettings = useDashboardStore(
+    (state) => state.setSignalSettings,
+  );
+  const resetSelection = useDashboardStore((state) => state.resetSelection);
+
+  const datasetsQuery = useDatasetsQuery();
+  const candlesQuery = useCandlesQuery(dataset, focusedTime);
+  const candles = candlesQuery.data?.candles ?? EMPTY_CANDLES;
+  const signalsQuery = useSignalsQuery(dataset, candles);
+  const signals = signalsQuery.data?.signals ?? [];
+  const detailQuery = useCandleDetailQuery(selectedTime);
+  const predictionQuery = usePredictionQuery(dataset, selectedTime);
+  const activeDataset = datasetsQuery.data?.datasets.find(
+    (item) => item.name === dataset,
+  );
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch(`${API}/api/datasets`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<{ datasets: DatasetInfo[] }>;
-      })
-      .then((data) => {
-        if (!controller.signal.aborted) setDatasets(data.datasets);
-      })
-      .catch((fetchError) => {
-        if (!controller.signal.aborted) console.error("Datasets :", fetchError);
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadCandles() {
-      setLoading(true);
-      setError(null);
-      setCandles([]);
-      try {
-        const params = new URLSearchParams({ dataset, limit: "500" });
-        if (focusedTime !== null) {
-          const span = 72 * 3600;
-          params.set(
-            "start",
-            new Date((focusedTime - span) * 1000).toISOString(),
-          );
-          params.set(
-            "end",
-            new Date((focusedTime + span) * 1000).toISOString(),
-          );
-        }
-        const response = await fetch(`${API}/api/candles?${params}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok)
-          throw new Error(`Erreur bougies : HTTP ${response.status}`);
-        const data = (await response.json()) as { candles: Candle[] };
-        if (!controller.signal.aborted) setCandles(data.candles);
-      } catch (loadError) {
-        if (!controller.signal.aborted) setError(String(loadError));
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    }
-    void loadCandles();
-    return () => controller.abort();
-  }, [dataset, focusedTime]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setSignals([]);
-    setSignalError(null);
-    if (dataset === "train" || candles.length === 0)
-      return () => controller.abort();
-    async function loadSignals() {
-      try {
-        const params = new URLSearchParams({
-          dataset,
-          limit: "2000",
-          start: new Date(candles[0].time * 1000).toISOString(),
-          end: new Date(candles[candles.length - 1].time * 1000).toISOString(),
-        });
-        const response = await fetch(`${API}/api/signals?${params}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok)
-          throw new Error(`Erreur signaux : HTTP ${response.status}`);
-        const data = (await response.json()) as { signals: TradingSignal[] };
-        if (!controller.signal.aborted) setSignals(data.signals);
-      } catch (loadError) {
-        if (!controller.signal.aborted) setSignalError(String(loadError));
-      }
-    }
-    void loadSignals();
-    return () => controller.abort();
-  }, [dataset, candles]);
-
-  useEffect(() => {
-    if (candles.length && selectedTime === null && !loading)
+    if (candles.length && selectedTime === null && !candlesQuery.isFetching) {
       setSelectedTime(focusedTime ?? candles[candles.length - 1].time);
-  }, [candles, selectedTime, loading, focusedTime]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (selectedTime === null) return () => controller.abort();
-    setDetail(null);
-    setPrediction(null);
-    setDetailError(null);
-    setPredictionError(null);
-    setDetailLoading(true);
-    setPredictionLoading(dataset !== "train");
-    async function loadDetail() {
-      try {
-        const response = await fetch(`${API}/api/candles/${selectedTime}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = (await response.json()) as CandleDetail;
-        if (!controller.signal.aborted) setDetail(data);
-      } catch (loadError) {
-        if (!controller.signal.aborted) setDetailError(String(loadError));
-      } finally {
-        if (!controller.signal.aborted) setDetailLoading(false);
-      }
     }
-    async function loadPrediction() {
-      if (dataset === "train") return;
-      try {
-        const response = await fetch(
-          `${API}/api/predictions/${selectedTime}?dataset=${dataset}`,
-          { signal: controller.signal },
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = (await response.json()) as PredictionDetail;
-        if (!controller.signal.aborted) setPrediction(data);
-      } catch (loadError) {
-        if (!controller.signal.aborted) setPredictionError(String(loadError));
-      } finally {
-        if (!controller.signal.aborted) setPredictionLoading(false);
-      }
-    }
-    void loadDetail();
-    void loadPrediction();
-    return () => controller.abort();
-  }, [selectedTime, dataset]);
+  }, [
+    candles,
+    candlesQuery.isFetching,
+    focusedTime,
+    selectedTime,
+    setSelectedTime,
+  ]);
 
   const changeDataset = useCallback(
     (next: Dataset) => {
       if (next === dataset) return;
-      setSelectedTime(null);
-      setFocusedTime(null);
-      setDetail(null);
-      setPrediction(null);
-      setSignals([]);
-      setDetailError(null);
-      setPredictionError(null);
-      setDetailLoading(false);
-      setPredictionLoading(false);
+      resetSelection();
       setDataset(next);
     },
-    [dataset],
+    [dataset, resetSelection, setDataset],
   );
 
-  const navigateToDisagreement = useCallback((time: number) => {
-    setSelectedTime(time);
-    setFocusedTime(time);
-    requestAnimationFrame(() =>
-      document
-        .getElementById("market-chart")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
-  }, []);
+  const navigateToDisagreement = useCallback(
+    (time: number) => {
+      setSelectedTime(time);
+      setFocusedTime(time);
+      requestAnimationFrame(() =>
+        document
+          .getElementById("market-chart")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
+    },
+    [setFocusedTime, setSelectedTime],
+  );
 
   const clearFocusedTime = useCallback(() => {
-    setFocusedTime(null);
-    setSelectedTime(null);
-    setDetail(null);
-    setPrediction(null);
-  }, []);
+    resetSelection();
+  }, [resetSelection]);
 
   async function copyDashboard() {
     if (!dashboardRef.current || capturing) return;
@@ -237,8 +118,8 @@ export default function Home() {
         new ClipboardItem({ "image/png": pendingBlob }),
       ]);
       setCaptureStatus("Interface copiée !");
-    } catch (captureError) {
-      console.error(captureError);
+    } catch (error) {
+      console.error(error);
       setCaptureStatus("Échec de la copie");
     } finally {
       setCapturing(false);
@@ -254,7 +135,7 @@ export default function Home() {
       <div className="q-workspace mx-auto max-w-[1920px] space-y-3 px-3 py-3 sm:px-4 xl:px-5">
         <DatasetToolbar
           dataset={dataset}
-          datasets={datasets}
+          datasets={datasetsQuery.data?.datasets ?? []}
           activeDataset={activeDataset}
           capturing={capturing}
           captureStatus={captureStatus}
@@ -273,13 +154,13 @@ export default function Home() {
               signalSettings={signalSettings}
               selectedTime={selectedTime}
               focusedTime={focusedTime}
-              loading={loading}
-              error={error}
-              signalError={signalError}
+              loading={candlesQuery.isLoading}
+              error={errorMessage(candlesQuery.error)}
+              signalError={errorMessage(signalsQuery.error)}
               showInspectors={showInspectors}
               onSignalSettingsChange={setSignalSettings}
               onSelectCandle={setSelectedTime}
-              onToggleInspectors={() => setShowInspectors((value) => !value)}
+              onToggleInspectors={() => setShowInspectors(!showInspectors)}
               onClearFocus={clearFocusedTime}
             />
           </div>
@@ -289,14 +170,14 @@ export default function Home() {
             <AIInspector
               dataset={dataset}
               selectedTime={selectedTime}
-              detail={prediction}
-              loading={predictionLoading}
-              error={predictionError}
+              detail={predictionQuery.data ?? null}
+              loading={predictionQuery.isLoading}
+              error={errorMessage(predictionQuery.error)}
             />
             <CandleInspector
-              detail={detail}
-              loading={detailLoading}
-              error={detailError}
+              detail={detailQuery.data ?? null}
+              loading={detailQuery.isLoading}
+              error={errorMessage(detailQuery.error)}
             />
           </div>
         </div>
