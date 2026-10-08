@@ -1,0 +1,17 @@
+Qwen Trading — Finition Market Explorer & Inspecteurs
+
+Source : archive V3 corrigée précédente.
+Changements principaux :
+- KPI du Market Explorer répartis sur toute la largeur du graphique
+- filtres et légende réorganisés sans perdre leur logique
+- cartes Qwen / Accord / Heuristique stylisées
+- Candle Inspector densifié, valeurs et sections séparées
+- appels API, TradingView, Analytics et Disagreement Explorer inchangés
+
+Installation :
+1. Sauvegarder dashboard/src avant toute copie.
+2. Copier le contenu de src/ dans C:\Users\xavie\qwen-trading\dashboard\src\
+3. Depuis dashboard : pnpm exec tsc --noEmit
+4. Relancer pnpm dev si nécessaire et vérifier la navigation, les filtres et les inspecteurs.
+
+Note : compilation complète avec vos node_modules Windows non exécutée ici.

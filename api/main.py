@@ -1,0 +1,230 @@
+from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+from typing import Literal
+
+import polars as pl
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+
+from api.routes.signals import router as signals_router
+from api.routes.analytics import router as analytics_router
+from api.routes.disagreements import router as disagreements_router
+
+ROOT = Path(__file__).resolve().parents[1]
+DATASET_PATH = ROOT / 'data' / 'processed' / 'btc_usdc_1h_labeled.parquet'
+VALIDATION_PATH = ROOT / 'data' / 'evaluation' / 'qwen3.5-9b-trading-v2-validation' / 'results.parquet'
+TEST_PATH = ROOT / 'data' / 'evaluation' / 'qwen3.5-9b-trading-v2-fast' / 'results_fast.parquet'
+SPLITS_DIR = ROOT / 'data' / 'splits'
+DatasetName = Literal['train', 'validation', 'test']
+PREDICTION_PATHS = {'validation': VALIDATION_PATH, 'test': TEST_PATH}
+
+app = FastAPI(title='Qwen Trading API', version='0.6.0')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'],
+    allow_credentials=False,
+    allow_methods=['GET'],
+    allow_headers=['*'],
+)
+
+MARKET_FEATURES = [
+    'timestamp', 'available_at', 'open', 'high', 'low', 'close', 'volume',
+    'return_1h', 'return_3h', 'return_6h', 'return_24h', 'log_return_1h',
+    'ema20', 'ema50', 'ema200', 'distance_ema20_pct', 'distance_ema50_pct',
+    'distance_ema200_pct', 'rsi14', 'atr14', 'atr14_pct', 'volume_sma20',
+    'volume_ratio', 'volatility_24h', 'volatility_72h', 'range_pct',
+    'body_pct', 'upper_wick_pct', 'lower_wick_pct', 'prev_high_24h',
+    'prev_low_24h', 'prev_high_72h', 'prev_low_72h', 'distance_high_24h_pct',
+    'distance_low_24h_pct', 'distance_high_72h_pct', 'distance_low_72h_pct',
+    'breakout_24h', 'breakdown_24h', 'trend_1h', 'ema20_50_spread_pct',
+    'ema50_200_spread_pct', '4h_close', '4h_ema20', '4h_ema50', '4h_rsi14',
+    '4h_atr14_pct', '4h_trend', '1d_close', '1d_ema20', '1d_ema50',
+    '1d_rsi14', '1d_atr14_pct', '1d_trend', 'trend_alignment', 'features_ready',
+]
+
+
+def require_market_dataset():
+    if not DATASET_PATH.is_file():
+        raise HTTPException(status_code=404, detail='Dataset BTC/USDC introuvable')
+
+
+def get_bounds(path: Path):
+    if not path.is_file():
+        return None
+    try:
+        lazy = pl.scan_parquet(path)
+        if 'timestamp' not in lazy.collect_schema():
+            return None
+        result = lazy.select(
+            pl.col('timestamp').min().alias('start'),
+            pl.col('timestamp').max().alias('end'),
+            pl.len().alias('rows'),
+        ).collect().to_dicts()[0]
+        return result if result['start'] is not None and result['end'] is not None else None
+    except (OSError, pl.exceptions.PolarsError):
+        return None
+
+
+def find_train_split():
+    if not SPLITS_DIR.is_dir():
+        return None
+    candidates = []
+    for path in SPLITS_DIR.rglob('*.parquet'):
+        if 'train' not in path.stem.lower():
+            continue
+        bounds = get_bounds(path)
+        if bounds is not None:
+            candidates.append((path, bounds))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def dataset_metadata(name: DatasetName):
+    if name == 'train':
+        train = find_train_split()
+        if train is None:
+            return {'name': name, 'available': False, 'start': None, 'end': None, 'rows': None,
+                    'source': None, 'message': 'Split Train non identifié de manière unique dans data/splits'}
+        path, bounds = train
+    else:
+        path = PREDICTION_PATHS[name]
+        bounds = get_bounds(path)
+        if bounds is None:
+            return {'name': name, 'available': False, 'start': None, 'end': None, 'rows': None,
+                    'source': str(path.relative_to(ROOT)), 'message': "Fichier d'évaluation introuvable"}
+    return {'name': name, 'available': True, 'start': bounds['start'].isoformat(),
+            'end': bounds['end'].isoformat(), 'rows': bounds['rows'],
+            'source': str(path.relative_to(ROOT)), 'message': None}
+
+
+def utc_from_timestamp(timestamp: int):
+    try:
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        raise HTTPException(status_code=422, detail='Timestamp Unix invalide')
+
+
+@lru_cache(maxsize=2)
+def load_predictions(dataset: str):
+    path = PREDICTION_PATHS[dataset]
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail='Fichier de prédictions introuvable')
+    return pl.read_parquet(path).sort('timestamp')
+
+
+def outcome_label(value):
+    if value == 1:
+        return 'TP'
+    if value == -1:
+        return 'SL'
+    if value == 0:
+        return 'UNRESOLVED'
+    return 'UNKNOWN'
+
+
+@app.get('/health')
+def health():
+    return {'status': 'ok', 'dataset_exists': DATASET_PATH.is_file()}
+
+
+@app.get('/api/datasets')
+def list_datasets():
+    return {'datasets': [dataset_metadata(name) for name in ('train', 'validation', 'test')]}
+
+
+@app.get('/api/candles')
+def get_candles(
+    dataset: DatasetName = 'validation',
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = Query(default=500, ge=1, le=2000),
+):
+    require_market_dataset()
+    metadata = dataset_metadata(dataset)
+    if not metadata['available']:
+        raise HTTPException(status_code=404, detail=metadata['message'])
+    for field, value in (('start', start), ('end', end)):
+        if value is not None and value.tzinfo is None:
+            raise HTTPException(status_code=422, detail=f'{field} doit avoir un fuseau horaire')
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail='start doit être <= end')
+    dataset_start = datetime.fromisoformat(metadata['start'])
+    dataset_end = datetime.fromisoformat(metadata['end'])
+    actual_start = max(dataset_start, start.astimezone(timezone.utc) if start else dataset_start)
+    actual_end = min(dataset_end, end.astimezone(timezone.utc) if end else dataset_end)
+    if actual_start > actual_end:
+        return {'symbol': 'BTCUSDC', 'timeframe': '1h', 'dataset': dataset, 'count': 0, 'candles': []}
+    df = (
+        pl.scan_parquet(DATASET_PATH)
+        .filter(pl.col('timestamp') >= actual_start, pl.col('timestamp') <= actual_end)
+        .select('timestamp', 'available_at', 'open', 'high', 'low', 'close', 'volume',
+                'ema20', 'ema50', 'ema200', 'rsi14')
+        .sort('timestamp', descending=True).limit(limit).sort('timestamp').collect()
+    )
+    candles = [{
+        'time': int(row['timestamp'].timestamp()),
+        'available_at': row['available_at'].isoformat(),
+        'open': row['open'], 'high': row['high'], 'low': row['low'], 'close': row['close'],
+        'volume': row['volume'], 'ema20': row['ema20'], 'ema50': row['ema50'],
+        'ema200': row['ema200'], 'rsi14': row['rsi14'],
+    } for row in df.iter_rows(named=True)]
+    return {'symbol': 'BTCUSDC', 'timeframe': '1h', 'dataset': dataset,
+            'count': len(candles), 'candles': candles}
+
+
+@app.get('/api/candles/{timestamp}')
+def inspect_candle(timestamp: int):
+    require_market_dataset()
+    candle_time = utc_from_timestamp(timestamp)
+    df = (
+        pl.scan_parquet(DATASET_PATH)
+        .filter(pl.col('timestamp') == candle_time)
+        .select(MARKET_FEATURES).limit(1).collect()
+    )
+    if df.is_empty():
+        raise HTTPException(status_code=404, detail='Bougie introuvable')
+    row = df.to_dicts()[0]
+    return {'symbol': 'BTCUSDC', 'timeframe': '1h', 'time': timestamp,
+            'timestamp': row.pop('timestamp').isoformat(),
+            'available_at': row.pop('available_at').isoformat(), 'features': row}
+
+
+@app.get('/api/predictions/{timestamp}')
+def inspect_prediction(timestamp: int, dataset: DatasetName = 'test'):
+    if dataset == 'train':
+        return {'available': False, 'dataset': dataset, 'time': timestamp,
+                'message': "Pas de prédictions Qwen V2 d'évaluation disponibles pour Train"}
+    candle_time = utc_from_timestamp(timestamp)
+    rows = load_predictions(dataset).filter(pl.col('timestamp') == candle_time)
+    if rows.is_empty():
+        return {'available': False, 'dataset': dataset, 'time': timestamp,
+                'message': 'Aucune prédiction pour cette bougie'}
+    if rows.height > 1:
+        raise HTTPException(status_code=409, detail='Plusieurs prédictions au même timestamp')
+    row = rows.to_dicts()[0]
+    return {
+        'available': True, 'dataset': dataset, 'time': timestamp,
+        'timestamp': row['timestamp'].isoformat(),
+        'predictions': {'qwen': row['qwen_prediction'], 'heuristic': row['heuristic_prediction'],
+                        'generated': row['generated'], 'bias_score': row['bias_score']},
+        'evaluation': {
+            'target': row['target'], 'decision': row['decision'],
+            'long_outcome_12h': row['long_outcome_12h'],
+            'short_outcome_12h': row['short_outcome_12h'],
+            'long_result': outcome_label(row['long_outcome_12h']),
+            'short_result': outcome_label(row['short_outcome_12h']),
+            'future_return_12h_pct': row['future_return_12h_pct'],
+            'up_move_12h_atr': row['up_move_12h_atr'],
+            'down_move_12h_atr': row['down_move_12h_atr'],
+        },
+        'comparison': {
+            'qwen_agrees_with_heuristic': row['qwen_prediction'] == row['heuristic_prediction'],
+            'qwen_matches_target': row['qwen_prediction'] == row['target'],
+            'heuristic_matches_target': row['heuristic_prediction'] == row['target'],
+        },
+    }
+
+
+app.include_router(signals_router)
+app.include_router(analytics_router)
+app.include_router(disagreements_router)

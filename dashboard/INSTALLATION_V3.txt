@@ -1,0 +1,12 @@
+QWEN TRADING — UI V3 (fidélité maquette, données réelles)
+
+1. Sauvegarder le dossier dashboard/src actuel.
+2. Copier le dossier src fourni dans C:\Users\xavie\qwen-trading\dashboard\src (remplacer les fichiers).
+3. Dans dashboard : pnpm exec tsc --noEmit ; pnpm dev
+4. Dans la racine du projet : .\.venv\Scripts\python.exe -m uvicorn api.main:app --reload
+5. Vérifier Test, Validation, sélection de bougies et navigation depuis Disagreement Explorer.
+
+Conservé : appels backend, chart TradingView, filtres, sélection orange, inspecteurs, vue Analytics, recherche dans les désaccords, copie PNG.
+
+Les mini-KPI au-dessus du graphique correspondent aux signaux Qwen sur les bougies chargées, pas au split entier. Les statistiques Analytics correspondent au split entier. Les compteurs de résultats sont historiques, non des positions tradées.
+Les entrées Stratégies / Données / Paramètres sont des libellés 'à venir' et non des pages fonctionnelles. Aucune confiance, raison textuelle ou cible en R n'est inventée.
