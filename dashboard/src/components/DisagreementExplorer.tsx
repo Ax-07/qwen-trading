@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 type Dataset = "train" | "validation" | "test";
 type Category =
@@ -225,12 +227,12 @@ export default function DisagreementExplorer({
                   </button>
                 ))}
               </div>
-              <input
+              <Input
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="⌕ Rechercher date ou décision…"
-                className="w-full rounded-md border border-[#324765] bg-[#0a182b] px-3 py-2 text-xs text-slate-100 outline-none focus:border-blue-500 sm:w-72"
+                placeholder="Rechercher date ou décision…"
+                className="w-full border-[#324765] bg-[#0a182b] text-xs text-slate-100 placeholder:text-slate-500 focus-visible:border-blue-500 sm:w-72"
               />
             </div>
             <div className="max-h-[460px] overflow-auto rounded-lg border border-[#283c59] q-scroll">
