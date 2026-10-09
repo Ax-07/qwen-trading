@@ -11,7 +11,6 @@ from api.routes.signals import router as signals_router
 from api.routes.analytics import router as analytics_router
 from api.routes.disagreements import router as disagreements_router
 from api.routes.market_structure import router as market_structure_router
-from api.routes.zigzag_structure import router as zigzag_router  # ZIGZAG_VISUAL_V31
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET_PATH = ROOT / 'data' / 'processed' / 'btc_usdc_1h_labeled.parquet'
@@ -228,7 +227,6 @@ def inspect_prediction(timestamp: int, dataset: DatasetName = 'test'):
 
 
 app.include_router(market_structure_router)
-app.include_router(zigzag_router)
 app.include_router(signals_router)
 app.include_router(analytics_router)
 app.include_router(disagreements_router)
