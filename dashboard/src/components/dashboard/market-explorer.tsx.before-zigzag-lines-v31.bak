@@ -55,9 +55,6 @@ export function MarketExplorer({
   const [showStructureChoch, setShowStructureChoch] = React.useState(true);
   const [showStructureLevels, setShowStructureLevels] = React.useState(true);
   const [showStructureOrigin, setShowStructureOrigin] = React.useState(false);
-  // ZIGZAG_LINES_V31 — disabled par défaut, pour éviter toute confusion.
-  const [showZigzagHistorical, setShowZigzagHistorical] = React.useState(false);
-  const [showZigzagCausal, setShowZigzagCausal] = React.useState(false);
   const setSignalSettings = (
     update: (current: SignalSettings) => SignalSettings,
   ) => onSignalSettingsChange(update(signalSettings));
@@ -163,20 +160,6 @@ export function MarketExplorer({
           </select>
         </label>
         <span className="text-slate-400">{structureEvents.length} confirmations ({structureMethod === "zigzag" ? "ZigZag" : "fractales"}) · marqueurs au moment connu (pas à l'origine du pivot)</span>
-        {structureMethod === "zigzag" && (
-          <div className="flex flex-wrap gap-3 text-[11px]">
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={showZigzagHistorical}
-                onChange={(e) => setShowZigzagHistorical(e.target.checked)} />
-              ZigZag historique (rétrospectif)
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="checkbox" checked={showZigzagCausal}
-                onChange={(e) => setShowZigzagCausal(e.target.checked)} />
-              Dernier pivot connu (causal)
-            </label>
-          </div>
-        )}
         <div className="flex flex-wrap gap-3">
           {([
             ["Pivots", showStructurePivots, setShowStructurePivots],
@@ -238,8 +221,6 @@ export function MarketExplorer({
             structureShowChoch={showStructureChoch}
             structureShowLevels={showStructureLevels}
             structureShowOrigin={showStructureOrigin}
-            zigzagShowHistorical={structureMethod === "zigzag" && showZigzagHistorical}
-            zigzagShowCausal={structureMethod === "zigzag" && showZigzagCausal}
             signals={signals}
             signalSettings={signalSettings}
             selectedTime={selectedTime}

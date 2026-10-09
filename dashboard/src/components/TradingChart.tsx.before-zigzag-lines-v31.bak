@@ -12,7 +12,6 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
-  LineType,
   type ISeriesApi,
   type IChartApi,
   type ISeriesMarkersPluginApi,
@@ -88,8 +87,6 @@ type Props = {
   structureShowChoch?: boolean;
   structureShowLevels?: boolean;
   structureShowOrigin?: boolean;
-  zigzagShowHistorical?: boolean;
-  zigzagShowCausal?: boolean;
   candles: Candle[];
   signals?: TradingSignal[];
   signalSettings?: SignalSettings;
@@ -292,8 +289,6 @@ export default function TradingChart({
   structureShowChoch = true,
   structureShowLevels = true,
   structureShowOrigin = false,
-  zigzagShowHistorical = false,
-  zigzagShowCausal = false,
   candles,
   signals = [],
   signalSettings = DEFAULT_SETTINGS,
@@ -320,11 +315,6 @@ export default function TradingChart({
 
   const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const structureOriginMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  // ZIGZAG_LINES_V31 — lignes séparées du détecteur fractal
-  const zigzagLineSeriesRef = useRef<{
-    historical: ISeriesApi<"Line", Time>;
-    causal: ISeriesApi<"Line", Time>;
-  } | null>(null);
   const structureLevelsRef = useRef<{
     high: ISeriesApi<"Line", Time>;
     low: ISeriesApi<"Line", Time>;
@@ -596,18 +586,6 @@ export default function TradingChart({
 
     structureMarkersRef.current = createSeriesMarkers(candleSeries, []);
     structureOriginMarkersRef.current = createSeriesMarkers(candleSeries, []);
-    zigzagLineSeriesRef.current = {
-      historical: chart.addSeries(LineSeries, {
-        color: "rgba(251,146,60,0.9)", lineWidth: 2,
-        lineStyle: LineStyle.Dashed, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false,
-      }, 0),
-      causal: chart.addSeries(LineSeries, {
-        color: "rgba(52,211,153,0.9)", lineWidth: 2,
-        lineType: LineType.WithSteps, lineStyle: LineStyle.Solid, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false,
-      }, 0),
-    };
     structureLevelsRef.current = {
       high: chart.addSeries(LineSeries, {
         color: "rgba(250,204,21,0.72)", lineWidth: 1,
@@ -739,7 +717,6 @@ export default function TradingChart({
 
       structureMarkersRef.current = null;
       structureOriginMarkersRef.current = null;
-      zigzagLineSeriesRef.current = null;
       structureLevelsRef.current = null;
       markersRef.current = {};
 
@@ -766,52 +743,6 @@ export default function TradingChart({
       );
     }
   }, [visibleSignals]);
-
-  // ZIGZAG_LINES_V31 : deux lectures différentes, sans fuite temporelle.
-  // - Historique : segments dessinés aux origines des pivots DEJA confirmés,
-  //   reconstruction rétrospective seulement, interdite aux décisions.
-  // - Causal : marche d'escalier du dernier prix de pivot connu. La valeur
-  //   devient exploitable après la clôture de la bougie de confirmation.
-  useEffect(() => {
-    const lines = zigzagLineSeriesRef.current;
-    if (!lines) return;
-    const valid = new Set(candles.map((c) => c.time));
-    const pivots = structureEvents.filter((e) =>
-      (e.kind === "high" || e.kind === "low") &&
-      Number.isFinite(e.price) && e.pivot_at !== null
-    );
-    const originTime = (e: MarketStructureEvent) =>
-      Math.floor(Date.parse(e.pivot_at!) / 1000) - 3600;
-
-    const historical = zigzagShowHistorical ? pivots
-      .map((e) => ({time: originTime(e), value: e.price, confirmed: e.time}))
-      .filter((p) => Number.isFinite(p.time) && valid.has(p.time))
-      .sort((a, b) => a.time - b.time || a.confirmed - b.confirmed)
-      .filter((p, i, arr) => i === arr.length - 1 || p.time !== arr[i + 1].time)
-      .map((p) => ({time: p.time as UTCTimestamp, value: p.value})) : [];
-    lines.historical.setData(historical);
-
-    // Pour rendre visible la persistance du dernier swing confirmé, on écrit
-    // deux points par changement : ancien niveau juste avant, puis nouveau.
-    // Si l'API fournit la bougie 1H de confirmation, le niveau est lisible
-    // sur cette bougie, mais seulement disponible à sa clôture.
-    const confirmed = [...pivots].sort((a, b) => a.time - b.time);
-    const causal: {time: UTCTimestamp; value: number}[] = [];
-    let index = 0;
-    let last: number | null = null;
-    if (zigzagShowCausal) {
-      for (const candle of candles) {
-        while (index < confirmed.length && confirmed[index].time <= candle.time) {
-          last = confirmed[index].price;
-          index += 1;
-        }
-        if (last !== null) {
-          causal.push({time: candle.time as UTCTimestamp, value: last});
-        }
-      }
-    }
-    lines.causal.setData(causal);
-  }, [candles, structureEvents, zigzagShowHistorical, zigzagShowCausal]);
 
   // Structure V3.1 : confirmation visible en temps reel ; origine optionnelle
   // historiquement positionnee, mais jamais prise comme signal disponible.
