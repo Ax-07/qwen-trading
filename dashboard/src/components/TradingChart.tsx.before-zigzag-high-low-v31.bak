@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +21,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
-import { VerticalLine } from "@tradingview/lwc-plugin-vertical-line";
+import { VerticalLine } from
+  "@tradingview/lwc-plugin-vertical-line";
 
 // --------------------------------------------------
 // TYPES
@@ -61,9 +63,16 @@ export type TradingSignal = {
   disagreement: boolean;
 };
 
-export type SignalSource = "qwen" | "heuristic" | "target";
+export type SignalSource =
+  | "qwen"
+  | "heuristic"
+  | "target";
 
-export type SignalFilter = "all" | "win" | "loss" | "disagree";
+export type SignalFilter =
+  | "all"
+  | "win"
+  | "loss"
+  | "disagree";
 
 export type SignalSettings = {
   qwen: boolean;
@@ -106,14 +115,24 @@ const DEFAULT_SETTINGS: SignalSettings = {
   filter: "all",
 };
 
-const SOURCES: SignalSource[] = ["qwen", "heuristic", "target"];
+const SOURCES: SignalSource[] = [
+  "qwen",
+  "heuristic",
+  "target",
+];
 
 // --------------------------------------------------
 // FILTRAGE DES SIGNAUX
 // --------------------------------------------------
 
-function getVisibleSignals(candles: Candle[], signals: TradingSignal[], settings: SignalSettings): VisibleSignal[] {
-  const validTimes = new Set(candles.map((c) => c.time));
+function getVisibleSignals(
+  candles: Candle[],
+  signals: TradingSignal[],
+  settings: SignalSettings
+): VisibleSignal[] {
+  const validTimes = new Set(
+    candles.map((c) => c.time)
+  );
 
   const result: VisibleSignal[] = [];
 
@@ -122,7 +141,10 @@ function getVisibleSignals(candles: Candle[], signals: TradingSignal[], settings
       continue;
     }
 
-    if (settings.filter === "disagree" && !signal.disagreement) {
+    if (
+      settings.filter === "disagree" &&
+      !signal.disagreement
+    ) {
       continue;
     }
 
@@ -133,19 +155,32 @@ function getVisibleSignals(candles: Candle[], signals: TradingSignal[], settings
 
       const decision = signal[source];
 
-      if (decision !== "LONG_BIAS" && decision !== "SHORT_BIAS") {
+      if (
+        decision !== "LONG_BIAS" &&
+        decision !== "SHORT_BIAS"
+      ) {
         continue;
       }
 
-      const outcomeKey = `${source}_result` as "qwen_result" | "heuristic_result" | "target_result";
+      const outcomeKey =
+        `${source}_result` as
+          | "qwen_result"
+          | "heuristic_result"
+          | "target_result";
 
       const outcome = signal[outcomeKey];
 
-      if (settings.filter === "win" && outcome !== "TP") {
+      if (
+        settings.filter === "win" &&
+        outcome !== "TP"
+      ) {
         continue;
       }
 
-      if (settings.filter === "loss" && outcome !== "SL") {
+      if (
+        settings.filter === "loss" &&
+        outcome !== "SL"
+      ) {
         continue;
       }
 
@@ -158,14 +193,19 @@ function getVisibleSignals(candles: Candle[], signals: TradingSignal[], settings
     }
   }
 
-  return result.sort((a, b) => a.time - b.time);
+  return result.sort(
+    (a, b) => a.time - b.time
+  );
 }
 
 // --------------------------------------------------
 // MARQUEURS
 // --------------------------------------------------
 
-function buildMarkers(signals: VisibleSignal[], source: SignalSource): SeriesMarker<Time>[] {
+function buildMarkers(
+  signals: VisibleSignal[],
+  source: SignalSource
+): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
 
   for (const signal of signals) {
@@ -173,9 +213,14 @@ function buildMarkers(signals: VisibleSignal[], source: SignalSource): SeriesMar
       continue;
     }
 
-    const isLong = signal.decision === "LONG_BIAS";
+    const isLong =
+      signal.decision === "LONG_BIAS";
 
-    let shape: "arrowUp" | "arrowDown" | "circle" | "square";
+    let shape:
+      | "arrowUp"
+      | "arrowDown"
+      | "circle"
+      | "square";
 
     let color: string;
     let size: number;
@@ -214,15 +259,25 @@ function getSignalStats(signals: VisibleSignal[]) {
   return {
     total: signals.length,
 
-    long: signals.filter((s) => s.decision === "LONG_BIAS").length,
+    long: signals.filter(
+      (s) => s.decision === "LONG_BIAS"
+    ).length,
 
-    short: signals.filter((s) => s.decision === "SHORT_BIAS").length,
+    short: signals.filter(
+      (s) => s.decision === "SHORT_BIAS"
+    ).length,
 
-    tp: signals.filter((s) => s.result === "TP").length,
+    tp: signals.filter(
+      (s) => s.result === "TP"
+    ).length,
 
-    sl: signals.filter((s) => s.result === "SL").length,
+    sl: signals.filter(
+      (s) => s.result === "SL"
+    ).length,
 
-    other: signals.filter((s) => s.result !== "TP" && s.result !== "SL").length,
+    other: signals.filter(
+      (s) => s.result !== "TP" && s.result !== "SL"
+    ).length,
   };
 }
 
@@ -250,17 +305,25 @@ export default function TradingChart({
 
   const onSelectRef = useRef(onSelectCandle);
 
-  const updateSelectionRef = useRef<((time: number | null) => void) | null>(null);
+  const updateSelectionRef = useRef<
+    ((time: number | null) => void) | null
+  >(null);
 
-  const markersRef = useRef<Partial<Record<SignalSource, ISeriesMarkersPluginApi<Time>>>>({});
+  const markersRef = useRef<
+    Partial<
+      Record<
+        SignalSource,
+        ISeriesMarkersPluginApi<Time>
+      >
+    >
+  >({});
 
   const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const structureOriginMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   // ZIGZAG_LINES_V31 — lignes séparées du détecteur fractal
   const zigzagLineSeriesRef = useRef<{
     historical: ISeriesApi<"Line", Time>;
-    causalHigh: ISeriesApi<"Line", Time>;
-    causalLow: ISeriesApi<"Line", Time>;
+    causal: ISeriesApi<"Line", Time>;
   } | null>(null);
   const structureLevelsRef = useRef<{
     high: ISeriesApi<"Line", Time>;
@@ -269,11 +332,19 @@ export default function TradingChart({
   const [copyStatus, setCopyStatus] = useState("");
 
   const visibleSignals = useMemo(
-    () => getVisibleSignals(candles, signals, signalSettings),
-    [candles, signals, signalSettings],
+    () =>
+      getVisibleSignals(
+        candles,
+        signals,
+        signalSettings
+      ),
+    [candles, signals, signalSettings]
   );
 
-  const stats = useMemo(() => getSignalStats(visibleSignals), [visibleSignals]);
+  const stats = useMemo(
+    () => getSignalStats(visibleSignals),
+    [visibleSignals]
+  );
 
   useEffect(() => {
     onSelectRef.current = onSelectCandle;
@@ -349,7 +420,7 @@ export default function TradingChart({
         wickUpColor: "#22c55e",
         wickDownColor: "#ef4444",
       },
-      0,
+      0
     );
 
     candleSeries.setData(
@@ -359,14 +430,17 @@ export default function TradingChart({
         high: c.high,
         low: c.low,
         close: c.close,
-      })),
+      }))
     );
 
     // --------------------------------------------------
     // EMA
     // --------------------------------------------------
 
-    function addEma(field: EmaField, color: string) {
+    function addEma(
+      field: EmaField,
+      color: string
+    ) {
       const series = chart.addSeries(
         LineSeries,
         {
@@ -375,16 +449,20 @@ export default function TradingChart({
           priceLineVisible: false,
           crosshairMarkerVisible: false,
         },
-        0,
+        0
       );
 
       series.setData(
         candles
-          .filter((c) => c[field] !== null && Number.isFinite(c[field]))
+          .filter(
+            (c) =>
+              c[field] !== null &&
+              Number.isFinite(c[field])
+          )
           .map((c) => ({
             time: c.time as UTCTimestamp,
             value: c[field] as number,
-          })),
+          }))
       );
     }
 
@@ -406,15 +484,18 @@ export default function TradingChart({
         priceLineVisible: false,
         lastValueVisible: false,
       },
-      1,
+      1
     );
 
     volumeSeries.setData(
       candles.map((c) => ({
         time: c.time as UTCTimestamp,
         value: c.volume,
-        color: c.close >= c.open ? "rgba(34,197,94,0.65)" : "rgba(239,68,68,0.65)",
-      })),
+        color:
+          c.close >= c.open
+            ? "rgba(34,197,94,0.65)"
+            : "rgba(239,68,68,0.65)",
+      }))
     );
 
     volumeSeries.priceScale().applyOptions({
@@ -441,21 +522,28 @@ export default function TradingChart({
           minMove: 0.01,
         },
       },
-      2,
+      2
     );
 
     rsiSeries.setData(
       candles
-        .filter((c) => c.rsi14 !== null && Number.isFinite(c.rsi14))
+        .filter(
+          (c) =>
+            c.rsi14 !== null &&
+            Number.isFinite(c.rsi14)
+        )
         .map((c) => ({
           time: c.time as UTCTimestamp,
           value: c.rsi14 as number,
-        })),
+        }))
     );
 
-    const firstTime = candles[0].time as UTCTimestamp;
+    const firstTime =
+      candles[0].time as UTCTimestamp;
 
-    const lastTime = candles[candles.length - 1].time as UTCTimestamp;
+    const lastTime =
+      candles[candles.length - 1]
+        .time as UTCTimestamp;
 
     for (const level of [30, 70]) {
       const line = chart.addSeries(
@@ -468,7 +556,7 @@ export default function TradingChart({
           lastValueVisible: false,
           crosshairMarkerVisible: false,
         },
-        2,
+        2
       );
 
       line.setData([
@@ -502,86 +590,45 @@ export default function TradingChart({
     // modifier la sélection orange.
 
     for (const source of SOURCES) {
-      markersRef.current[source] = createSeriesMarkers(candleSeries, []);
+      markersRef.current[source] =
+        createSeriesMarkers(candleSeries, []);
     }
 
     structureMarkersRef.current = createSeriesMarkers(candleSeries, []);
     structureOriginMarkersRef.current = createSeriesMarkers(candleSeries, []);
     zigzagLineSeriesRef.current = {
-      historical: chart.addSeries(
-        LineSeries,
-        {
-          color: "rgba(251,146,60,0.9)",
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        },
-        0,
-      ),
-      // ZIGZAG_HIGH_LOW_V31 : niveaux distincts et mis à jour à confirmation.
-      causalHigh: chart.addSeries(
-        LineSeries,
-        {
-          title: "HIGH confirmé",
-          color: "rgba(251,191,36,0.95)",
-          lineWidth: 2,
-          lineType: LineType.WithSteps,
-          lineStyle: LineStyle.Solid,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          crosshairMarkerVisible: false,
-        },
-        0,
-      ),
-      causalLow: chart.addSeries(
-        LineSeries,
-        {
-          title: "LOW confirmé",
-          color: "rgba(52,211,153,0.95)",
-          lineWidth: 2,
-          lineType: LineType.WithSteps,
-          lineStyle: LineStyle.Solid,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          crosshairMarkerVisible: false,
-        },
-        0,
-      ),
+      historical: chart.addSeries(LineSeries, {
+        color: "rgba(251,146,60,0.9)", lineWidth: 2,
+        lineStyle: LineStyle.Dashed, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false,
+      }, 0),
+      causal: chart.addSeries(LineSeries, {
+        color: "rgba(52,211,153,0.9)", lineWidth: 2,
+        lineType: LineType.WithSteps, lineStyle: LineStyle.Solid, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false,
+      }, 0),
     };
     structureLevelsRef.current = {
-      high: chart.addSeries(
-        LineSeries,
-        {
-          color: "rgba(250,204,21,0.72)",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        },
-        0,
-      ),
-      low: chart.addSeries(
-        LineSeries,
-        {
-          color: "rgba(34,211,238,0.72)",
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        },
-        0,
-      ),
+      high: chart.addSeries(LineSeries, {
+        color: "rgba(250,204,21,0.72)", lineWidth: 1,
+        lineStyle: LineStyle.Dashed, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false,
+      }, 0),
+      low: chart.addSeries(LineSeries, {
+        color: "rgba(34,211,238,0.72)", lineWidth: 1,
+        lineStyle: LineStyle.Dashed, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false,
+      }, 0),
     };
 
     // --------------------------------------------------
     // SÉLECTION ORANGE PERMANENTE
     // --------------------------------------------------
 
-    const selectionMarkers = createSeriesMarkers(candleSeries, []);
+    const selectionMarkers = createSeriesMarkers(
+      candleSeries,
+      []
+    );
 
     let priceLine: VerticalLine | null = null;
     let volumeLine: VerticalLine | null = null;
@@ -613,7 +660,9 @@ export default function TradingChart({
         return;
       }
 
-      const candle = candles.find((c) => c.time === time);
+      const candle = candles.find(
+        (c) => c.time === time
+      );
 
       if (!candle) {
         return;
@@ -664,7 +713,9 @@ export default function TradingChart({
     // CLIC SUR UNE BOUGIE
     // --------------------------------------------------
 
-    const handleClick = (param: { time?: unknown }) => {
+    const handleClick = (
+      param: { time?: unknown }
+    ) => {
       if (typeof param.time !== "number") {
         return;
       }
@@ -710,7 +761,9 @@ export default function TradingChart({
         continue;
       }
 
-      plugin.setMarkers(buildMarkers(visibleSignals, source));
+      plugin.setMarkers(
+        buildMarkers(visibleSignals, source)
+      );
     }
   }, [visibleSignals]);
 
@@ -723,52 +776,41 @@ export default function TradingChart({
     const lines = zigzagLineSeriesRef.current;
     if (!lines) return;
     const valid = new Set(candles.map((c) => c.time));
-    const pivots = structureEvents.filter(
-      (e) => (e.kind === "high" || e.kind === "low") && Number.isFinite(e.price) && e.pivot_at !== null,
+    const pivots = structureEvents.filter((e) =>
+      (e.kind === "high" || e.kind === "low") &&
+      Number.isFinite(e.price) && e.pivot_at !== null
     );
-    const originTime = (e: MarketStructureEvent) => Math.floor(Date.parse(e.pivot_at!) / 1000) - 3600;
+    const originTime = (e: MarketStructureEvent) =>
+      Math.floor(Date.parse(e.pivot_at!) / 1000) - 3600;
 
-    const historical = zigzagShowHistorical
-      ? pivots
-          .map((e) => ({ time: originTime(e), value: e.price, confirmed: e.time }))
-          .filter((p) => Number.isFinite(p.time) && valid.has(p.time))
-          .sort((a, b) => a.time - b.time || a.confirmed - b.confirmed)
-          .filter((p, i, arr) => i === arr.length - 1 || p.time !== arr[i + 1].time)
-          .map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
-      : [];
+    const historical = zigzagShowHistorical ? pivots
+      .map((e) => ({time: originTime(e), value: e.price, confirmed: e.time}))
+      .filter((p) => Number.isFinite(p.time) && valid.has(p.time))
+      .sort((a, b) => a.time - b.time || a.confirmed - b.confirmed)
+      .filter((p, i, arr) => i === arr.length - 1 || p.time !== arr[i + 1].time)
+      .map((p) => ({time: p.time as UTCTimestamp, value: p.value})) : [];
     lines.historical.setData(historical);
 
-    // ZIGZAG_HIGH_LOW_V31 — chaque niveau conserve sa dernière valeur connue.
-    // IMPORTANT : known_at désigne la FIN de la bougie de confirmation.
-    // Un nouveau pivot n'apparaît donc qu'à l'OUVERTURE de la bougie 1H
-    // suivante, jamais sur une bougie encore en formation.
-    const confirmed = [...pivots]
-      .map((e) => ({
-        kind: e.kind,
-        price: e.price,
-        knownAt: e.known_at ? Date.parse(e.known_at) / 1000 : NaN,
-      }))
-      .filter((e) => Number.isFinite(e.knownAt))
-      .sort((a, b) => a.knownAt - b.knownAt);
-    const highData: { time: UTCTimestamp; value: number }[] = [];
-    const lowData: { time: UTCTimestamp; value: number }[] = [];
+    // Pour rendre visible la persistance du dernier swing confirmé, on écrit
+    // deux points par changement : ancien niveau juste avant, puis nouveau.
+    // Si l'API fournit la bougie 1H de confirmation, le niveau est lisible
+    // sur cette bougie, mais seulement disponible à sa clôture.
+    const confirmed = [...pivots].sort((a, b) => a.time - b.time);
+    const causal: {time: UTCTimestamp; value: number}[] = [];
     let index = 0;
-    let lastHigh: number | null = null;
-    let lastLow: number | null = null;
+    let last: number | null = null;
     if (zigzagShowCausal) {
       for (const candle of candles) {
-        while (index < confirmed.length && confirmed[index].knownAt <= candle.time) {
-          const pivot = confirmed[index];
-          if (pivot.kind === "high") lastHigh = pivot.price;
-          if (pivot.kind === "low") lastLow = pivot.price;
+        while (index < confirmed.length && confirmed[index].time <= candle.time) {
+          last = confirmed[index].price;
           index += 1;
         }
-        if (lastHigh !== null) highData.push({ time: candle.time as UTCTimestamp, value: lastHigh });
-        if (lastLow !== null) lowData.push({ time: candle.time as UTCTimestamp, value: lastLow });
+        if (last !== null) {
+          causal.push({time: candle.time as UTCTimestamp, value: last});
+        }
       }
     }
-    lines.causalHigh.setData(highData);
-    lines.causalLow.setData(lowData);
+    lines.causal.setData(causal);
   }, [candles, structureEvents, zigzagShowHistorical, zigzagShowCausal]);
 
   // Structure V3.1 : confirmation visible en temps reel ; origine optionnelle
@@ -780,94 +822,67 @@ export default function TradingChart({
     if (!plugin || !originPlugin || !levelSeries) return;
     const validTimes = new Set(candles.map((c) => c.time));
     const colors: Record<MarketStructureEvent["kind"], string> = {
-      high: "#facc15",
-      low: "#22d3ee",
-      break_up: "#22c55e",
-      break_down: "#f87171",
-      change_up: "#a78bfa",
-      change_down: "#fb923c",
+      high: "#facc15", low: "#22d3ee",
+      break_up: "#22c55e", break_down: "#f87171",
+      change_up: "#a78bfa", change_down: "#fb923c",
     };
     const visible = structureEvents.filter((event) =>
-      event.kind === "high" || event.kind === "low"
-        ? structureShowPivots
-        : event.kind === "break_up" || event.kind === "break_down"
-          ? structureShowBos
-          : structureShowChoch,
+      (event.kind === "high" || event.kind === "low") ? structureShowPivots :
+      (event.kind === "break_up" || event.kind === "break_down") ? structureShowBos : structureShowChoch
     );
     const markers: SeriesMarker<Time>[] = visible
       .filter((event) => validTimes.has(event.time))
       .map((event) => ({
         time: event.time as UTCTimestamp,
         position: ["high", "break_down", "change_down"].includes(event.kind)
-          ? ("aboveBar" as const)
-          : ("belowBar" as const),
-        shape: ["high", "low"].includes(event.kind) ? ("circle" as const) : ("square" as const),
-        color: colors[event.kind],
-        text: event.label,
-        size: 0.75,
-      }))
-      .sort((a, b) => Number(a.time) - Number(b.time));
+          ? "aboveBar" as const : "belowBar" as const,
+        shape: ["high", "low"].includes(event.kind) ? "circle" as const : "square" as const,
+        color: colors[event.kind], text: event.label, size: 0.75,
+      })).sort((a, b) => Number(a.time) - Number(b.time));
     plugin.setMarkers(markers);
 
     const origins: SeriesMarker<Time>[] = structureShowOrigin
-      ? structureEvents
-          .filter((event) => (event.kind === "high" || event.kind === "low") && event.pivot_at !== null)
-          .flatMap((event): SeriesMarker<Time>[] => {
-            const pivot = Date.parse(event.pivot_at!);
-            if (!Number.isFinite(pivot)) return [];
-            const t = Math.floor(pivot / 1000) - 3600; // origine: cloture du pivot -> ouverture de sa bougie 1H
-            if (!validTimes.has(t)) return [];
-            return [
-              {
-                time: t as UTCTimestamp,
-                position: event.kind === "high" ? "aboveBar" : "belowBar",
-                shape: "circle",
-                color: "#94a3b8",
-                text: `${event.label} (origine retrospective)`,
-                size: 0.55,
-              },
-            ];
-          })
-      : [];
+      ? structureEvents.filter((event) =>
+          (event.kind === "high" || event.kind === "low") && event.pivot_at !== null
+        ).flatMap((event): SeriesMarker<Time>[] => {
+          const pivot = Date.parse(event.pivot_at!);
+          if (!Number.isFinite(pivot)) return [];
+          const t = Math.floor(pivot / 1000) - 3600; // origine: cloture du pivot -> ouverture de sa bougie 1H
+          if (!validTimes.has(t)) return [];
+          return [{time: t as UTCTimestamp,
+            position: event.kind === "high" ? "aboveBar" : "belowBar",
+            shape: "circle", color: "#94a3b8", text: `${event.label} (origine retrospective)`, size: 0.55 }];
+        }) : [];
     origins.sort((a, b) => Number(a.time) - Number(b.time));
     originPlugin.setMarkers(origins);
 
     // Lignes en escalier, mises a jour uniquement a confirmation du pivot.
     // Avant confirmation, la valeur demeure celle du precedent pivot connu.
-    const highs = structureEvents
-      .filter((e) => e.kind === "high" && typeof e.price === "number" && Number.isFinite(e.price))
-      .sort((a, b) => a.time - b.time);
-    const lows = structureEvents
-      .filter((e) => e.kind === "low" && typeof e.price === "number" && Number.isFinite(e.price))
-      .sort((a, b) => a.time - b.time);
+    const highs = structureEvents.filter((e) => e.kind === "high" &&
+      typeof e.price === "number" && Number.isFinite(e.price))
+      .sort((a,b)=>a.time-b.time);
+    const lows = structureEvents.filter((e) => e.kind === "low" &&
+      typeof e.price === "number" && Number.isFinite(e.price))
+      .sort((a,b)=>a.time-b.time);
     const makeLevel = (events: MarketStructureEvent[]) => {
       let index = 0;
       let last: number | null = null;
-      return structureShowLevels
-        ? candles.flatMap((c) => {
-            // L'API fournit l'heure d'ouverture 1H dans event.time.
-            // Le pivot est confirme a la cloture de cette bougie :
-            // les niveaux sont visuels pour la bougie de confirmation,
-            // mais NON utilisables avant son close.
-            while (index < events.length && events[index].time <= c.time) {
-              last = events[index].price;
-              index += 1;
-            }
-            return last !== null ? [{ time: c.time as UTCTimestamp, value: last }] : [];
-          })
-        : [];
+      return structureShowLevels ? candles.flatMap((c) => {
+        // L'API fournit l'heure d'ouverture 1H dans event.time.
+        // Le pivot est confirme a la cloture de cette bougie :
+        // les niveaux sont visuels pour la bougie de confirmation,
+        // mais NON utilisables avant son close.
+        while (index < events.length && events[index].time <= c.time) {
+          last = events[index].price;
+          index += 1;
+        }
+        return last !== null ? [{time: c.time as UTCTimestamp, value: last}] : [];
+      }) : [];
     };
     levelSeries.high.setData(makeLevel(highs));
     levelSeries.low.setData(makeLevel(lows));
-  }, [
-    structureEvents,
-    candles,
-    structureShowPivots,
-    structureShowBos,
-    structureShowChoch,
-    structureShowLevels,
-    structureShowOrigin,
-  ]);
+  }, [structureEvents, candles, structureShowPivots, structureShowBos,
+      structureShowChoch, structureShowLevels, structureShowOrigin]);
 
   // --------------------------------------------------
   // ACTUALISER LA SÉLECTION
@@ -892,17 +907,24 @@ export default function TradingChart({
     try {
       setCopyStatus("Copie en cours...");
 
-      const canvas = chart.takeScreenshot(true, true);
+      const canvas = chart.takeScreenshot(
+        true,
+        true
+      );
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((result) => {
-          if (result) {
-            resolve(result);
-          } else {
-            reject(new Error("PNG indisponible"));
-          }
-        }, "image/png");
-      });
+      const blob = await new Promise<Blob>(
+        (resolve, reject) => {
+          canvas.toBlob((result) => {
+            if (result) {
+              resolve(result);
+            } else {
+              reject(
+                new Error("PNG indisponible")
+              );
+            }
+          }, "image/png");
+        }
+      );
 
       await navigator.clipboard.write([
         new ClipboardItem({
@@ -926,19 +948,33 @@ export default function TradingChart({
       {/* Indicateurs et bouton copie */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-3 text-xs">
-          <span className="text-amber-400">● EMA20</span>
+          <span className="text-amber-400">
+            ● EMA20
+          </span>
 
-          <span className="text-blue-400">● EMA50</span>
+          <span className="text-blue-400">
+            ● EMA50
+          </span>
 
-          <span className="text-purple-400">● EMA200</span>
+          <span className="text-purple-400">
+            ● EMA200
+          </span>
 
-          <span className="text-slate-400">▮ Volume</span>
+          <span className="text-slate-400">
+            ▮ Volume
+          </span>
 
-          <span className="text-violet-300">● RSI14</span>
+          <span className="text-violet-300">
+            ● RSI14
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
-          {copyStatus && <span className="text-xs text-slate-400">{copyStatus}</span>}
+          {copyStatus && (
+            <span className="text-xs text-slate-400">
+              {copyStatus}
+            </span>
+          )}
 
           <button
             type="button"
@@ -953,27 +989,41 @@ export default function TradingChart({
       {/* Légende des sources */}
       <div className="mb-2 flex flex-wrap gap-4 text-[11px] text-slate-400">
         <span>
-          <span className="text-emerald-400">▲</span> <span className="text-red-400">▼</span> Qwen V2
+          <span className="text-emerald-400">▲</span>{" "}
+          <span className="text-red-400">▼</span>{" "}
+          Qwen V2
         </span>
 
         <span>
-          <span className="text-emerald-300">●</span> <span className="text-rose-400">●</span> Heuristique
+          <span className="text-emerald-300">●</span>{" "}
+          <span className="text-rose-400">●</span>{" "}
+          Heuristique
         </span>
 
         <span>
-          <span className="text-blue-400">■</span> <span className="text-purple-400">■</span> Target
+          <span className="text-blue-400">■</span>{" "}
+          <span className="text-purple-400">■</span>{" "}
+          Target
         </span>
       </div>
 
       {/* Sélection courante */}
       {selectedTime !== null && (
         <div className="mb-2 text-xs text-amber-300">
-          ◆ Bougie sélectionnée : {new Date(selectedTime * 1000).toISOString().replace("T", " ").slice(0, 16)} UTC
+          ◆ Bougie sélectionnée :{" "}
+          {new Date(selectedTime * 1000)
+            .toISOString()
+            .replace("T", " ")
+            .slice(0, 16)}{" "}
+          UTC
         </div>
       )}
 
       {/* Graphique TradingView */}
-      <div ref={containerRef} className="h-[505px] w-full" />
+      <div
+        ref={containerRef}
+        className="h-[505px] w-full"
+      />
     </div>
   );
 }

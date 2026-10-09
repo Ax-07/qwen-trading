@@ -173,7 +173,7 @@ export function MarketExplorer({
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={showZigzagCausal}
                 onChange={(e) => setShowZigzagCausal(e.target.checked)} />
-              HIGH / LOW confirmés (causal)
+              Dernier pivot connu (causal)
             </label>
           </div>
         )}
