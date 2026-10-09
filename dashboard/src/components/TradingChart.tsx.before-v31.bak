@@ -12,7 +12,6 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
-  type ISeriesApi,
   type IChartApi,
   type ISeriesMarkersPluginApi,
   type SeriesMarker,
@@ -26,15 +25,6 @@ import { VerticalLine } from
 // --------------------------------------------------
 // TYPES
 // --------------------------------------------------
-
-export type MarketStructureEvent = {
-  time: number;
-  known_at: string | null;
-  pivot_at: string | null;
-  label: string;
-  kind: "high" | "low" | "break_up" | "break_down" | "change_up" | "change_down";
-  price: number | null;
-};
 
 export type Candle = {
   time: number;
@@ -81,12 +71,6 @@ export type SignalSettings = {
 };
 
 type Props = {
-  structureEvents?: MarketStructureEvent[];
-  structureShowPivots?: boolean;
-  structureShowBos?: boolean;
-  structureShowChoch?: boolean;
-  structureShowLevels?: boolean;
-  structureShowOrigin?: boolean;
   candles: Candle[];
   signals?: TradingSignal[];
   signalSettings?: SignalSettings;
@@ -283,12 +267,6 @@ function getSignalStats(signals: VisibleSignal[]) {
 // --------------------------------------------------
 
 export default function TradingChart({
-  structureEvents = [],
-  structureShowPivots = true,
-  structureShowBos = true,
-  structureShowChoch = true,
-  structureShowLevels = true,
-  structureShowOrigin = false,
   candles,
   signals = [],
   signalSettings = DEFAULT_SETTINGS,
@@ -313,12 +291,6 @@ export default function TradingChart({
     >
   >({});
 
-  const structureMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const structureOriginMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const structureLevelsRef = useRef<{
-    high: ISeriesApi<"Line", Time>;
-    low: ISeriesApi<"Line", Time>;
-  } | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
 
   const visibleSignals = useMemo(
@@ -584,21 +556,6 @@ export default function TradingChart({
         createSeriesMarkers(candleSeries, []);
     }
 
-    structureMarkersRef.current = createSeriesMarkers(candleSeries, []);
-    structureOriginMarkersRef.current = createSeriesMarkers(candleSeries, []);
-    structureLevelsRef.current = {
-      high: chart.addSeries(LineSeries, {
-        color: "rgba(250,204,21,0.72)", lineWidth: 1,
-        lineStyle: LineStyle.Dashed, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false,
-      }, 0),
-      low: chart.addSeries(LineSeries, {
-        color: "rgba(34,211,238,0.72)", lineWidth: 1,
-        lineStyle: LineStyle.Dashed, priceLineVisible: false,
-        lastValueVisible: false, crosshairMarkerVisible: false,
-      }, 0),
-    };
-
     // --------------------------------------------------
     // SÉLECTION ORANGE PERMANENTE
     // --------------------------------------------------
@@ -715,9 +672,6 @@ export default function TradingChart({
 
       clearSelection();
 
-      structureMarkersRef.current = null;
-      structureOriginMarkersRef.current = null;
-      structureLevelsRef.current = null;
       markersRef.current = {};
 
       chartRef.current = null;
@@ -743,77 +697,6 @@ export default function TradingChart({
       );
     }
   }, [visibleSignals]);
-
-  // Structure V3.1 : confirmation visible en temps reel ; origine optionnelle
-  // historiquement positionnee, mais jamais prise comme signal disponible.
-  useEffect(() => {
-    const plugin = structureMarkersRef.current;
-    const originPlugin = structureOriginMarkersRef.current;
-    const levelSeries = structureLevelsRef.current;
-    if (!plugin || !originPlugin || !levelSeries) return;
-    const validTimes = new Set(candles.map((c) => c.time));
-    const colors: Record<MarketStructureEvent["kind"], string> = {
-      high: "#facc15", low: "#22d3ee",
-      break_up: "#22c55e", break_down: "#f87171",
-      change_up: "#a78bfa", change_down: "#fb923c",
-    };
-    const visible = structureEvents.filter((event) =>
-      (event.kind === "high" || event.kind === "low") ? structureShowPivots :
-      (event.kind === "break_up" || event.kind === "break_down") ? structureShowBos : structureShowChoch
-    );
-    const markers: SeriesMarker<Time>[] = visible
-      .filter((event) => validTimes.has(event.time))
-      .map((event) => ({
-        time: event.time as UTCTimestamp,
-        position: ["high", "break_down", "change_down"].includes(event.kind)
-          ? "aboveBar" as const : "belowBar" as const,
-        shape: ["high", "low"].includes(event.kind) ? "circle" as const : "square" as const,
-        color: colors[event.kind], text: event.label, size: 0.75,
-      })).sort((a, b) => Number(a.time) - Number(b.time));
-    plugin.setMarkers(markers);
-
-    const origins: SeriesMarker<Time>[] = structureShowOrigin
-      ? structureEvents.filter((event) =>
-          (event.kind === "high" || event.kind === "low") && event.pivot_at !== null
-        ).flatMap((event): SeriesMarker<Time>[] => {
-          const pivot = Date.parse(event.pivot_at!);
-          if (!Number.isFinite(pivot)) return [];
-          const t = Math.floor(pivot / 1000) - 3600; // origine: cloture du pivot -> ouverture de sa bougie 1H
-          if (!validTimes.has(t)) return [];
-          return [{time: t as UTCTimestamp,
-            position: event.kind === "high" ? "aboveBar" : "belowBar",
-            shape: "circle", color: "#94a3b8", text: `${event.label} (origine retrospective)`, size: 0.55 }];
-        }) : [];
-    origins.sort((a, b) => Number(a.time) - Number(b.time));
-    originPlugin.setMarkers(origins);
-
-    // Lignes en escalier, mises a jour uniquement a confirmation du pivot.
-    // Avant confirmation, la valeur demeure celle du precedent pivot connu.
-    const highs = structureEvents.filter((e) => e.kind === "high" &&
-      typeof e.price === "number" && Number.isFinite(e.price))
-      .sort((a,b)=>a.time-b.time);
-    const lows = structureEvents.filter((e) => e.kind === "low" &&
-      typeof e.price === "number" && Number.isFinite(e.price))
-      .sort((a,b)=>a.time-b.time);
-    const makeLevel = (events: MarketStructureEvent[]) => {
-      let index = 0;
-      let last: number | null = null;
-      return structureShowLevels ? candles.flatMap((c) => {
-        // L'API fournit l'heure d'ouverture 1H dans event.time.
-        // Le pivot est confirme a la cloture de cette bougie :
-        // les niveaux sont visuels pour la bougie de confirmation,
-        // mais NON utilisables avant son close.
-        while (index < events.length && events[index].time <= c.time) {
-          last = events[index].price;
-          index += 1;
-        }
-        return last !== null ? [{time: c.time as UTCTimestamp, value: last}] : [];
-      }) : [];
-    };
-    levelSeries.high.setData(makeLevel(highs));
-    levelSeries.low.setData(makeLevel(lows));
-  }, [structureEvents, candles, structureShowPivots, structureShowBos,
-      structureShowChoch, structureShowLevels, structureShowOrigin]);
 
   // --------------------------------------------------
   // ACTUALISER LA SÉLECTION

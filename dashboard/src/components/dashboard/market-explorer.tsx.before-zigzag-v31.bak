@@ -14,8 +14,6 @@ export function MarketExplorer({
   candles,
   structureEvents,
   structureTimeframe,
-  structureMethod,
-  onStructureMethodChange,
   onStructureTimeframeChange,
   signals,
   signalSettings,
@@ -34,8 +32,6 @@ export function MarketExplorer({
   candles: Candle[];
   structureEvents: MarketStructureEvent[];
   structureTimeframe: "1h" | "4h" | "1d";
-  structureMethod: "fractal" | "zigzag";
-  onStructureMethodChange: (method: "fractal" | "zigzag") => void;
   onStructureTimeframeChange: (next: "1h" | "4h" | "1d") => void;
   signals: TradingSignal[];
   signalSettings: SignalSettings;
@@ -146,20 +142,13 @@ export function MarketExplorer({
       </div>
       <div className="flex flex-wrap items-center gap-3 border-b border-[#24334d] px-4 py-3 text-xs text-slate-300">
         <strong className="text-slate-200">Structure V3.1</strong>
-        {/* ZIGZAG_VISUAL_V31 */}
-        <label>Détecteur :{" "}<select value={structureMethod}
-          onChange={(e) => onStructureMethodChange(e.target.value as "fractal" | "zigzag")}
-          className="rounded border border-[#34517a] bg-[#11243c] px-2 py-1 text-blue-100">
-          <option value="fractal">Fractales</option>
-          <option value="zigzag">ZigZag causal (1%)</option>
-        </select></label>
         <label>Timeframe :{" "}
           <select value={structureTimeframe} onChange={(e) => onStructureTimeframeChange(e.target.value as "1h" | "4h" | "1d")}
             className="rounded border border-[#34517a] bg-[#11243c] px-2 py-1 text-blue-100">
             <option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option>
           </select>
         </label>
-        <span className="text-slate-400">{structureEvents.length} confirmations ({structureMethod === "zigzag" ? "ZigZag" : "fractales"}) · marqueurs au moment connu (pas à l'origine du pivot)</span>
+        <span className="text-slate-400">{structureEvents.length} confirmations · marqueurs au moment connu (pas à l'origine du pivot)</span>
         <div className="flex flex-wrap gap-3">
           {([
             ["Pivots", showStructurePivots, setShowStructurePivots],

@@ -1,9 +1,7 @@
-import * as React from "react";
-import TradingChart, {
+﻿import TradingChart, {
   type Candle,
   type SignalFilter,
   type SignalSettings,
-  type MarketStructureEvent,
   type TradingSignal,
 } from "@/components/TradingChart";
 import type { Dataset } from "./types";
@@ -12,11 +10,6 @@ import { FilterButton } from "./ui";
 export function MarketExplorer({
   dataset,
   candles,
-  structureEvents,
-  structureTimeframe,
-  structureMethod,
-  onStructureMethodChange,
-  onStructureTimeframeChange,
   signals,
   signalSettings,
   selectedTime,
@@ -32,11 +25,6 @@ export function MarketExplorer({
 }: {
   dataset: Dataset;
   candles: Candle[];
-  structureEvents: MarketStructureEvent[];
-  structureTimeframe: "1h" | "4h" | "1d";
-  structureMethod: "fractal" | "zigzag";
-  onStructureMethodChange: (method: "fractal" | "zigzag") => void;
-  onStructureTimeframeChange: (next: "1h" | "4h" | "1d") => void;
   signals: TradingSignal[];
   signalSettings: SignalSettings;
   selectedTime: number | null;
@@ -50,11 +38,6 @@ export function MarketExplorer({
   onToggleInspectors: () => void;
   onClearFocus: () => void;
 }) {
-  const [showStructurePivots, setShowStructurePivots] = React.useState(true);
-  const [showStructureBos, setShowStructureBos] = React.useState(true);
-  const [showStructureChoch, setShowStructureChoch] = React.useState(true);
-  const [showStructureLevels, setShowStructureLevels] = React.useState(true);
-  const [showStructureOrigin, setShowStructureOrigin] = React.useState(false);
   const setSignalSettings = (
     update: (current: SignalSettings) => SignalSettings,
   ) => onSignalSettingsChange(update(signalSettings));
@@ -144,37 +127,6 @@ export function MarketExplorer({
           ))}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3 border-b border-[#24334d] px-4 py-3 text-xs text-slate-300">
-        <strong className="text-slate-200">Structure V3.1</strong>
-        {/* ZIGZAG_VISUAL_V31 */}
-        <label>Détecteur :{" "}<select value={structureMethod}
-          onChange={(e) => onStructureMethodChange(e.target.value as "fractal" | "zigzag")}
-          className="rounded border border-[#34517a] bg-[#11243c] px-2 py-1 text-blue-100">
-          <option value="fractal">Fractales</option>
-          <option value="zigzag">ZigZag causal (1%)</option>
-        </select></label>
-        <label>Timeframe :{" "}
-          <select value={structureTimeframe} onChange={(e) => onStructureTimeframeChange(e.target.value as "1h" | "4h" | "1d")}
-            className="rounded border border-[#34517a] bg-[#11243c] px-2 py-1 text-blue-100">
-            <option value="1h">1H</option><option value="4h">4H</option><option value="1d">1D</option>
-          </select>
-        </label>
-        <span className="text-slate-400">{structureEvents.length} confirmations ({structureMethod === "zigzag" ? "ZigZag" : "fractales"}) · marqueurs au moment connu (pas à l'origine du pivot)</span>
-        <div className="flex flex-wrap gap-3">
-          {([
-            ["Pivots", showStructurePivots, setShowStructurePivots],
-            ["BOS", showStructureBos, setShowStructureBos],
-            ["CHoCH", showStructureChoch, setShowStructureChoch],
-            ["Niveaux", showStructureLevels, setShowStructureLevels],
-            ["Origines (retrospectif)", showStructureOrigin, setShowStructureOrigin],
-          ] as const).map(([label, checked, setChecked]) => (
-            <label key={label} className="flex items-center gap-1 text-[11px]">
-              <input type="checkbox" checked={checked}
-                onChange={(e) => setChecked(e.target.checked)} />{label}
-            </label>
-          ))}
-        </div>
-      </div>
       <SignalControls settings={signalSettings} onChange={setSignalSettings} />
       {signalError && (
         <p className="mx-4 mt-3 rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-300">
@@ -215,12 +167,6 @@ export function MarketExplorer({
           <TradingChart
             key={`${dataset}-${focusedTime ?? "latest"}`}
             candles={candles}
-            structureEvents={structureEvents}
-            structureShowPivots={showStructurePivots}
-            structureShowBos={showStructureBos}
-            structureShowChoch={showStructureChoch}
-            structureShowLevels={showStructureLevels}
-            structureShowOrigin={showStructureOrigin}
             signals={signals}
             signalSettings={signalSettings}
             selectedTime={selectedTime}
