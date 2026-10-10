@@ -973,7 +973,7 @@ export default function TradingChart({
       )}
 
       {/* Graphique TradingView */}
-      <div ref={containerRef} className="h-[505px] w-full" />
+      <div ref={containerRef} className="h-126.25 w-full" />
     </div>
   );
 }
