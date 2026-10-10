@@ -1,0 +1,156 @@
+"""V4.6.3: one LOCAL Qwen base-model inference, no writes/downloads/orders.
+Run with .venv-unsloth. A base-model JSON answer may be rejected (diagnostic result).
+"""
+from __future__ import annotations
+import argparse
+import os
+# Set offline flags before importing any HF library.
+os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+os.environ['HF_DATASETS_OFFLINE'] = '1'
+os.environ['WANDB_DISABLED'] = 'true'
+import json
+import time
+from pathlib import Path
+
+MODEL_ID = 'Qwen/Qwen3.5-9B'
+
+
+def verify_local_snapshot(model_id=MODEL_ID, cache_dir=None):
+    """Resolve a complete locally cached repository via HF hub; never connect to network."""
+    from huggingface_hub import snapshot_download
+    kwargs = {'repo_id': model_id, 'local_files_only': True}
+    if cache_dir is not None:
+        kwargs['cache_dir'] = str(cache_dir)
+    path = Path(snapshot_download(**kwargs))
+    if not (path / 'config.json').is_file():
+        raise FileNotFoundError('Local model config.json missing')
+    if not (path / 'tokenizer_config.json').is_file():
+        raise FileNotFoundError('Local tokenizer_config.json missing')
+    index_files = list(path.glob('*.safetensors.index.json'))
+    if index_files:
+        for idx in index_files:
+            data = json.loads(idx.read_text(encoding='utf-8'))
+            shards = set(data['weight_map'].values())
+            if not shards or any(not (path / x).is_file() for x in shards):
+                raise FileNotFoundError(f'Local model weights incomplete: {idx.name}')
+    elif not list(path.glob('*.safetensors')):
+        raise FileNotFoundError('No local safetensors weight files')
+    return path
+
+
+def load_local_model(path, max_memory=('11GiB', '7GiB'), quant4=True):
+    """Load base model, never a legacy V1/V2 adapter. Caller must explicitly opt in."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    if not torch.cuda.is_available():
+        raise RuntimeError('CUDA unavailable')
+    n = torch.cuda.device_count()
+    if n < 1:
+        raise RuntimeError('No CUDA GPU')
+    memory = {i: max_memory[i] for i in range(min(n, len(max_memory)))}
+    if n > len(max_memory):
+        raise RuntimeError('Unexpected number of CUDA devices: specify a safe memory map')
+    # Device ordering must be inspected with nvidia-smi before proceeding.
+    tokenizer = AutoTokenizer.from_pretrained(str(path), local_files_only=True, trust_remote_code=False)
+    opts = {'local_files_only': True, 'trust_remote_code': False,
+            'device_map': 'auto', 'max_memory': memory, 'torch_dtype': torch.float16,
+            'low_cpu_mem_usage': True}
+    if quant4:
+        opts['quantization_config'] = BitsAndBytesConfig(load_in_4bit=True,
+            bnb_4bit_quant_type='nf4', bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True)
+    model = AutoModelForCausalLM.from_pretrained(str(path), **opts)
+    model.eval()
+    # Refuse any CPU/disk offload: requires a separately audited plan.
+    mapping = getattr(model, 'hf_device_map', {}) or {}
+    if any(str(dev).lower() in ('cpu', 'disk') for dev in mapping.values()):
+        raise RuntimeError('Model dispatched to CPU/disk; aborting non-audited offload')
+    return tokenizer, model
+
+
+def generate_once(messages, tokenizer, model, max_new_tokens=128):
+    import torch
+    if not 1 <= max_new_tokens <= 256:
+        raise ValueError('max_new_tokens out of bounds')
+    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,
+                                         enable_thinking=False)
+    tokens = tokenizer(text, return_tensors='pt')
+    # Inputs on the embedding layer's device, compatible with two-GPU device_map.
+    device = model.get_input_embeddings().weight.device
+    tokens = {k: v.to(device) for k, v in tokens.items()}
+    start = time.perf_counter()
+    with torch.inference_mode():
+        generated = model.generate(**tokens, max_new_tokens=max_new_tokens,
+                                   do_sample=False, pad_token_id=tokenizer.eos_token_id)
+    latency = time.perf_counter() - start
+    raw = tokenizer.decode(generated[0][tokens['input_ids'].shape[-1]:], skip_special_tokens=True).strip()
+    return raw, latency
+
+
+def prepare_case(observations, schema, minutes):
+    from qwen_adapter_v461 import one_observation, context_from_minutes, prepare_messages
+    from agent_actions_risk_v450 import Position
+    names, now, features = one_observation(observations, schema)
+    context = context_from_minutes(minutes, now)
+    return prepare_messages(now, features, Position(), context, names), context
+
+
+def interpret_answer(raw, context):
+    from qwen_adapter_v461 import parse_action, ModelOutputError
+    from agent_actions_risk_v450 import validate_action, Position, RiskPolicy
+    try:
+        action = parse_action(raw)
+    except ModelOutputError as exc:
+        return {'json_valid': False, 'reason': str(exc), 'risk_accepted': False}
+    verdict = validate_action(action, Position(), context, RiskPolicy())
+    return {'json_valid': True, 'action': action.kind.value,
+            'risk_accepted': bool(verdict.accepted), 'risk_code': verdict.code}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--mode', choices=['check-cache', 'infer-one'], default='check-cache')
+    parser.add_argument('--cache-dir', type=Path, default=None)
+    parser.add_argument('--observations', type=Path, default=Path('data/evaluation/v442-observation-audit/pilot_observations.parquet'))
+    parser.add_argument('--schema', type=Path, default=Path('data/evaluation/v442-observation-audit/schema.json'))
+    parser.add_argument('--minutes', type=Path, default=Path('data/evaluation/v421-binance-1m/BTCUSDT/2024-01.parquet'))
+    parser.add_argument('--max-new-tokens', type=int, default=128)
+    args = parser.parse_args(argv)
+    if not 1 <= args.max_new_tokens <= 256:
+        parser.error('max-new-tokens must be 1..256')
+    try:
+        snapshot = verify_local_snapshot(cache_dir=args.cache_dir)
+    except (FileNotFoundError, OSError, ValueError, KeyError) as exc:
+        print('CACHE INCOMPLETE — refusing to download or load model:', type(exc).__name__, str(exc)[:250])
+        return 2
+    print('CACHE PASS — local config, tokenizer and safetensors shards found')
+    print('Local snapshot:', snapshot)
+    if args.mode == 'check-cache':
+        print('No model loaded. No downloads, orders, training or output files.')
+        return 0
+    messages, context = prepare_case(args.observations, args.schema, args.minutes)
+    try:
+        import torch
+        for i in range(torch.cuda.device_count()):
+            p = torch.cuda.get_device_properties(i)
+            print('CUDA', i, ':', p.name, 'VRAM MiB:', round(p.total_memory / 2**20))
+        if torch.cuda.device_count() != 2 or torch.cuda.get_device_properties(0).total_memory < 11 * 2**30 or torch.cuda.get_device_properties(1).total_memory < 7 * 2**30:
+            raise RuntimeError('Expected CUDA:0 >= 11 GiB, CUDA:1 >= 7 GiB. Inspect device order before inference.')
+        t0 = time.perf_counter()
+        tokenizer, model = load_local_model(snapshot)
+        print('Load seconds:', round(time.perf_counter() - t0, 2))
+        raw, latency = generate_once(messages, tokenizer, model, args.max_new_tokens)
+    except (RuntimeError, ValueError, ImportError, OSError) as exc:
+        print('LOAD/INFERENCE FAILED (no fallback/download):', type(exc).__name__, str(exc)[:400])
+        return 3
+    print('Inference seconds:', round(latency, 2))
+    print('Output characters:', len(raw))
+    print('Validation:', json.dumps(interpret_answer(raw, context), ensure_ascii=False))
+    # Do not print untrusted full generations or persist user/model data.
+    print('No output saved, no training, no simulated or live orders.')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
